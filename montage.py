@@ -1,14 +1,26 @@
 #!/usr/bin/python
 
-# (C) 2013 Henry de Valence <hdevalence@hdevalence.ca>
-# Licenced under GPLv2+
+"""montage -- create montages from a sequence of images.
+
+Usage:
+    montage.py [-b S] [-t T] -o OUTPUT INPUT...
+    montage.py (-h | --help)
+
+Options:
+    -b S, --blur-sigma=S       Amount to blur the mask [default: 3]
+    -t T, --threshold=T        Threshold for foreground detection [default: 16]
+    -o OUTPUT, --output=OUTPUT Name of the output file
+    -h, --help                 Show this screen.
+
+(C) 2013 Henry de Valence <hdevalence@hdevalence.ca>
+Licenced under GPLv2+
+"""
 
 import numpy as np
-import scipy.ndimage
-import scipy.stats
+from scipy.ndimage.filters import gaussian_filter
+from scipy.stats import threshold
 from PIL import Image
-
-BLUR_SIGMA = 3
+from docopt import docopt
 
 
 def split_channels(image):
@@ -26,27 +38,22 @@ def median(images):
     return np.median(np.dstack(images), axis=2).astype(np.uint8)
 
 
-def blur(image):
-    """
-    Blur the image slightly.
-
-    We use this to avoid noise splotches, when we mask the images.
-    """
-    return scipy.ndimage.filters.gaussian_filter(image, BLUR_SIGMA)
-
-
-def mask(foreground, background, thresh):
+def mask(foreground, background, blur_sigma, thresh):
     """
     Given two RGB images, foreground and background,
     give a mask of the areas where foreground differs from the
     background by more than thresh.
+
+    Apply blur_sigma amount of blurring.
     """
-    diff = np.abs(foreground.astype(int) - background.astype(int))
+    fg = gaussian_filter(foreground, blur_sigma).astype(int)
+    bg = gaussian_filter(background, blur_sigma).astype(int)
+    diff = np.abs(fg - bg)
     m = np.sum(diff, axis=2)
-    m = scipy.stats.threshold(m, threshmin=thresh, newval=0)
-    m = scipy.stats.threshold(m, threshmax=thresh+1, newval=200)
-    m = scipy.ndimage.filters.gaussian_filter(m, BLUR_SIGMA)
-    return m.astype(np.uint8)
+    m = threshold(m, threshmin=thresh, newval=0)
+    m = threshold(m, threshmax=thresh+1, newval=200)
+    m = gaussian_filter(m, blur_sigma).astype(np.uint8)
+    return m
 
 
 def create_background(images):
@@ -67,12 +74,13 @@ def merge_images(background, foregrounds, masks):
 
 
 if __name__ == "__main__":
-    import sys
+    arguments = docopt(__doc__)
     openImage = lambda f: np.asarray(Image.open(f), dtype=np.uint8)
-    images = list(map(openImage, sys.argv[1:]))
+    images = list(map(openImage, arguments['INPUT']))
     bg = create_background(images)
-    bg_image = Image.fromarray(bg)
-    bg_image.save("/tmp/test_bg.png")
-    masks = list(map(lambda fg: mask(blur(fg), blur(bg), 16), images))
+    S = float(arguments['--blur-sigma'])
+    T = int(arguments['--threshold'])
+    make_mask = lambda fg: mask(fg, bg, S, T)
+    masks = list(map(make_mask, images))
     composite = merge_images(bg, images, masks)
-    composite.save("/tmp/test_bg_mixed.png")
+    composite.save(arguments['--output'])
