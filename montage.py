@@ -3,12 +3,13 @@
 """montage -- create montages from a sequence of images.
 
 Usage:
-    montage.py [-b S] [-t T] -o OUTPUT INPUT...
+    montage.py [-a A] [-b S] [-t T] -o OUTPUT INPUT...
     montage.py (-h | --help)
 
 Options:
     -b S, --blur-sigma=S       Amount to blur the mask [default: 3]
     -t T, --threshold=T        Threshold for foreground detection [default: 16]
+    -a A, --alpha=A            Alpha value to use for blending [default: 0.9]
     -o OUTPUT, --output=OUTPUT Name of the output file
     -h, --help                 Show this screen.
 
@@ -38,20 +39,21 @@ def median(images):
     return np.median(np.dstack(images), axis=2).astype(np.uint8)
 
 
-def mask(foreground, background, blur_sigma, thresh):
+def mask(foreground, background, blur_sigma, thresh, opacity):
     """
     Given two RGB images, foreground and background,
     give a mask of the areas where foreground differs from the
     background by more than thresh.
 
-    Apply blur_sigma amount of blurring.
+    Apply blur_sigma amount of blurring, and set the opacity of
+    the nonzero parts of the mask to opacity.
     """
     fg = gaussian_filter(foreground, blur_sigma).astype(int)
     bg = gaussian_filter(background, blur_sigma).astype(int)
     diff = np.abs(fg - bg)
     m = np.sum(diff, axis=2)
     m = threshold(m, threshmin=thresh, newval=0)
-    m = threshold(m, threshmax=thresh+1, newval=200)
+    m = threshold(m, threshmax=thresh+1, newval=opacity)
     m = gaussian_filter(m, blur_sigma).astype(np.uint8)
     return m
 
@@ -80,7 +82,8 @@ if __name__ == "__main__":
     bg = create_background(images)
     S = float(arguments['--blur-sigma'])
     T = int(arguments['--threshold'])
-    make_mask = lambda fg: mask(fg, bg, S, T)
+    A = int(255*float(arguments['--alpha']))
+    make_mask = lambda fg: mask(fg, bg, S, T, A)
     masks = list(map(make_mask, images))
     composite = merge_images(bg, images, masks)
     composite.save(arguments['--output'])
