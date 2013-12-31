@@ -23,7 +23,6 @@ from scipy.stats import threshold
 from PIL import Image
 from docopt import docopt
 
-
 def split_channels(image):
     """
     Given an image of shape (x, y, 3), return a tuple
@@ -39,7 +38,7 @@ def median(images):
     return np.median(np.dstack(images), axis=2).astype(np.uint8)
 
 
-def mask(foreground, background, blur_sigma, thresh, opacity):
+def create_mask(foreground, background, blur_sigma, thresh, opacity):
     """
     Given two RGB images, foreground and background,
     give a mask of the areas where foreground differs from the
@@ -48,14 +47,13 @@ def mask(foreground, background, blur_sigma, thresh, opacity):
     Apply blur_sigma amount of blurring, and set the opacity of
     the nonzero parts of the mask to opacity.
     """
-    fg = gaussian_filter(foreground, blur_sigma).astype(int)
-    bg = gaussian_filter(background, blur_sigma).astype(int)
-    diff = np.abs(fg - bg)
-    m = np.sum(diff, axis=2)
-    m = threshold(m, threshmin=thresh, newval=0)
-    m = threshold(m, threshmax=thresh+1, newval=opacity)
-    m = gaussian_filter(m, blur_sigma).astype(np.uint8)
-    return m
+    blurred_fg = gaussian_filter(foreground, blur_sigma).astype(int)
+    blurred_bg = gaussian_filter(background, blur_sigma).astype(int)
+    diff = np.sum(np.abs(fg - bg), axis=2)
+    diff = threshold(diff, threshmin=thresh, newval=0)
+    diff = threshold(diff, threshmax=thresh+1, newval=opacity)
+    diff = gaussian_filter(diff, blur_sigma).astype(np.uint8)
+    return diff
 
 
 def create_background(images):
@@ -67,6 +65,10 @@ def create_background(images):
 
 
 def merge_images(background, foregrounds, masks):
+    """
+    Successively compose foreground images onto background image
+    with alpha channels given by the masks param.
+    """
     bg_i = Image.fromarray(background)
     for fg, m in zip(foregrounds, masks):
         fg_i = Image.fromarray(fg)
@@ -77,13 +79,13 @@ def merge_images(background, foregrounds, masks):
 
 if __name__ == "__main__":
     arguments = docopt(__doc__)
-    openImage = lambda f: np.asarray(Image.open(f), dtype=np.uint8)
-    images = list(map(openImage, arguments['INPUT']))
+    images = [np.asarray(Image.open(f), dtype=np.uint8)
+              for f in arguments['INPUT']]
     bg = create_background(images)
-    S = float(arguments['--blur-sigma'])
-    T = int(arguments['--threshold'])
-    A = int(255*float(arguments['--alpha']))
-    make_mask = lambda fg: mask(fg, bg, S, T, A)
-    masks = list(map(make_mask, images))
+    sigma = float(arguments['--blur-sigma'])
+    thresh_level = int(arguments['--threshold'])
+    alpha = int(255*float(arguments['--alpha']))
+    masks = [create_mask(fg, bg, sigma, thresh_level, alpha)
+             for fg in images]
     composite = merge_images(bg, images, masks)
     composite.save(arguments['--output'])
